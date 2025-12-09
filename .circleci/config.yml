@@ -4,17 +4,18 @@ jobs:
   run-k6-on-kubernetes:
     docker:
       - image: cimg/python:3.11
+
     environment:
       KUBECONFIG: /tmp/kubeconfig
 
     steps:
       - checkout
 
-      # -----------------------------
-      # Install kubectl + deps
-      # -----------------------------
+      # -------------------------
+      # Install tools
+      # -------------------------
       - run:
-          name: Install kubectl & dependencies
+          name: Install kubectl & deps
           command: |
             sudo apt-get update
             sudo apt-get install -y curl openssh-client
@@ -23,53 +24,56 @@ jobs:
             curl -LO https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
             chmod +x kubectl
             sudo mv kubectl /usr/local/bin/kubectl
-
             kubectl version --client
 
-      # -----------------------------
-      # SSH Tunnel to K3s API
-      # -----------------------------
+      # -------------------------
+      # SSH tunnel (IMPORTANT)
+      # -------------------------
       - run:
           name: Create SSH tunnel to K3s API
           command: |
             ssh -o StrictHostKeyChecking=no \
                 -N -L 6443:127.0.0.1:6443 \
                 ubuntu@98.92.67.107 &
-            sleep 5
+            sleep 8
 
-      # -----------------------------
-      # Restore Kubeconfig
-      # -----------------------------
+      # -------------------------
+      # Restore kubeconfig
+      # -------------------------
       - run:
           name: Restore kubeconfig
           command: |
             echo "$KUBE_CONFIG_DATA" | base64 --decode > /tmp/kubeconfig
+
+            # Force localhost API usage
+            sed -i 's#https://.*:6443#https://127.0.0.1:6443#g' /tmp/kubeconfig
+
             kubectl get nodes
 
-      # -----------------------------
-      # Create ConfigMap for K6
-      # -----------------------------
+      # -------------------------
+      # ConfigMap
+      # -------------------------
       - run:
           name: Create ConfigMap (K6 scripts)
           command: |
             kubectl delete configmap k6-scripts --ignore-not-found
             kubectl create configmap k6-scripts --from-file=k6/test.js
 
-      # -----------------------------
+      # -------------------------
       # Run K6 Job
-      # -----------------------------
+      # -------------------------
       - run:
-          name: Run K6 Job on Kubernetes
+          name: Run K6 Job
           command: |
             kubectl delete job k6-demo --ignore-not-found
             kubectl apply -f k8s/k6-job.yaml
             kubectl wait --for=condition=complete job/k6-demo --timeout=600s
 
-      # -----------------------------
-      # Collect Logs
-      # -----------------------------
+      # -------------------------
+      # Logs
+      # -------------------------
       - run:
-          name: Collect K6 logs
+          name: Collect K6 Logs
           command: |
             POD=$(kubectl get pods -l job-name=k6-demo -o jsonpath='{.items[0].metadata.name}')
             kubectl logs $POD > k6-output.log
@@ -82,15 +86,12 @@ jobs:
       - image: cimg/python:3.11
     steps:
       - checkout
-
       - run:
-          name: Install dependencies
+          name: Install deps
           command: pip install requests
-
       - run:
           name: Trigger SpeedCurve
           command: python3 ci/speedcurve_post.py
-
       - store_artifacts:
           path: speedcurve_response.json
 
@@ -102,3 +103,6 @@ workflows:
       - speedcurve-trigger:
           requires:
             - run-k6-on-kubernetes
+
+  
+       

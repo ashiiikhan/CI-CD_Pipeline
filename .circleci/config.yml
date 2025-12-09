@@ -21,6 +21,13 @@ jobs:
             sudo mv kubectl /usr/local/bin/kubectl
             kubectl version --client
 
+      # ✅ VERY IMPORTANT DEBUG STEP
+      - run:
+          name: Test K3s API connectivity from CircleCI
+          command: |
+            echo "Testing K3s API..."
+            curl -vk --connect-timeout 10 https://98.92.67.107:6443/version || true
+
       - run:
           name: Restore kubeconfig
           command: |
@@ -75,4 +82,6 @@ workflows:
   k6-and-speedcurve:
     jobs:
       - run-k6-on-kubernetes
-      - speedcurve-trigger
+      - speedcurve-trigger:
+          requires:
+            - run-k6-on-kubernetes

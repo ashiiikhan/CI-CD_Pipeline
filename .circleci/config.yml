@@ -10,69 +10,63 @@ jobs:
       - checkout
 
       - run:
-          name: Install kubectl & dependencies
+          name: Install kubectl
           command: |
             sudo apt-get update
             sudo apt-get install -y curl
-            pip3 install --no-cache-dir requests
-
-            curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            curl -LO https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
             chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/kubectl
+            sudo mv kubectl /usr/local/bin/
             kubectl version --client
 
       - run:
           name: Restore kubeconfig
           command: |
             echo "$KUBE_CONFIG_DATA" | base64 --decode > /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
             kubectl get nodes
 
       - run:
-          name: Create ConfigMap (K6 scripts)
+          name: Create ConfigMap for k6
           command: |
             kubectl delete configmap k6-scripts --ignore-not-found
-            kubectl create configmap k6-scripts --from-file=k6
+            kubectl create configmap k6-scripts --from-file=k6/
 
       - run:
-          name: Run K6 Job on Kubernetes
+          name: Run K6 Job
           command: |
             kubectl delete job k6-demo --ignore-not-found
             kubectl apply -f k8s/k6-job.yaml
+            kubectl wait --for=condition=complete job/k6-demo --timeout=600s
 
       - run:
-          name: Wait & collect K6 logs
+          name: Collect logs
           command: |
-            kubectl wait --for=condition=complete job/k6-demo --timeout=600s || true
             POD=$(kubectl get pods -l job-name=k6-demo -o jsonpath='{.items[0].metadata.name}')
-            kubectl logs $POD > k6-output.log || true
+            kubectl logs $POD > k6-output.log
 
       - store_artifacts:
           path: k6-output.log
-
 
   speedcurve-trigger:
     docker:
       - image: cimg/python:3.11
     steps:
       - checkout
-
       - run:
-          name: Install dependencies
-          command: |
-            pip3 install --no-cache-dir requests
-
+          name: Install deps
+          command: pip install requests
       - run:
-          name: Trigger SpeedCurve test
-          command: |
-            python3 ci/speedcurve_post.py
-
+          name: Trigger SpeedCurve
+          command: python3 ci/speedcurve_post.py
       - store_artifacts:
           path: speedcurve_response.json
-
 
 workflows:
   version: 2
   k6-and-speedcurve:
     jobs:
       - run-k6-on-kubernetes
-      - speedcurve-trigger
+      - speedcurve-trigger:
+          requires:
+            - run-k6-on-kubernetes

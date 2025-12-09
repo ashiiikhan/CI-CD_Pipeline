@@ -13,10 +13,10 @@ jobs:
           name: Install kubectl & dependencies
           command: |
             sudo apt-get update
-            sudo apt-get install -y curl python3-pip
-            pip3 install requests
+            sudo apt-get install -y curl
+            pip install requests
 
-            curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            curl -LO https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
             chmod +x kubectl
             sudo mv kubectl /usr/local/bin/kubectl
             kubectl version --client
@@ -38,17 +38,16 @@ jobs:
           command: |
             kubectl delete job k6-demo --ignore-not-found
             kubectl apply -f k8s/k6-job.yaml
+            kubectl wait --for=condition=complete job/k6-demo --timeout=600s
 
       - run:
-          name: Wait & collect K6 logs
+          name: Collect K6 logs
           command: |
-            kubectl wait --for=condition=complete job/k6-demo --timeout=600s || true
             POD=$(kubectl get pods -l job-name=k6-demo -o jsonpath='{.items[0].metadata.name}')
-            kubectl logs $POD > k6-output.log || true
+            kubectl logs $POD > k6-output.log
 
       - store_artifacts:
           path: k6-output.log
-
 
   speedcurve-trigger:
     docker:
@@ -58,22 +57,20 @@ jobs:
 
       - run:
           name: Install dependencies
-          command: |
-            pip3 install requests
+          command: pip install requests
 
       - run:
           name: Trigger SpeedCurve test
-          command: |
-            python3 ci/speedcurve_post.py
+          command: python3 ci/speedcurve_post.py
 
       - store_artifacts:
           path: speedcurve_response.json
-
 
 workflows:
   version: 2
   k6-and-speedcurve:
     jobs:
       - run-k6-on-kubernetes
-      - speedcurve-trigger
-
+      - speedcurve-trigger:
+          requires:
+            - run-k6-on-kubernetes

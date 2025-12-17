@@ -10,16 +10,13 @@ jobs:
       - checkout
 
       - run:
-          name: Install kubectl & dependencies
+          name: Install kubectl
           command: |
             sudo apt-get update
-            sudo apt-get install -y curl python3-pip
-            pip3 install requests
-
-            curl -LO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo apt-get install -y curl
+            curl -LO https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
             chmod +x kubectl
             sudo mv kubectl /usr/local/bin/kubectl
-            kubectl version --client
 
       - run:
           name: Restore kubeconfig
@@ -28,52 +25,53 @@ jobs:
             kubectl get nodes
 
       - run:
-          name: Create ConfigMap (K6 scripts)
+          name: Prepare namespace & configmap
           command: |
-            kubectl delete configmap k6-scripts --ignore-not-found
-            kubectl create configmap k6-scripts --from-file=k6/test.js
+            kubectl get ns k6 || kubectl create ns k6
+            kubectl delete configmap k6-scripts -n k6 --ignore-not-found
+            kubectl create configmap k6-scripts \
+              --from-file=k6/test.js \
+              -n k6
 
       - run:
-          name: Run K6 Job on Kubernetes
+          name: Run k6 job
           command: |
-            kubectl delete job k6-demo --ignore-not-found
+            kubectl delete job k6-demo -n k6 --ignore-not-found
             kubectl apply -f k8s/k6-job.yaml
 
       - run:
-          name: Wait & collect K6 logs
+          name: Wait for job (FAIL on SLA breach)
           command: |
-            kubectl wait --for=condition=complete job/k6-demo --timeout=600s || true
-            POD=$(kubectl get pods -l job-name=k6-demo -o jsonpath='{.items[0].metadata.name}')
-            kubectl logs $POD > k6-output.log || true
+            kubectl wait --for=condition=complete job/k6-demo -n k6 --timeout=600s
+            POD=$(kubectl get pods -n k6 -l job-name=k6-demo -o jsonpath='{.items[0].metadata.name}')
+            kubectl logs -n k6 $POD | tee k6-output.log
 
       - store_artifacts:
           path: k6-output.log
 
+      - run:
+          name: AI Summary (optional)
+          command: |
+            python3 ci/ai_call.py || true
+
+      - store_artifacts:
+          path: ai_response.json
 
   speedcurve-trigger:
     docker:
       - image: cimg/python:3.11
     steps:
       - checkout
-
       - run:
-          name: Install dependencies
-          command: |
-            pip3 install requests
-
+          command: pip install requests
       - run:
-          name: Trigger SpeedCurve test
-          command: |
-            python3 ci/speedcurve_post.py
-
+          command: python3 ci/speedcurve_post.py
       - store_artifacts:
           path: speedcurve_response.json
 
-
 workflows:
   version: 2
-  k6-and-speedcurve:
+  performance-tests:
     jobs:
       - run-k6-on-kubernetes
       - speedcurve-trigger
-    

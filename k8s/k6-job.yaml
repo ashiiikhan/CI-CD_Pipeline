@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: k6-demo
+  namespace: k6
 spec:
   backoffLimit: 0
   template:

@@ -1,29 +1,24 @@
 import os, json, requests
 
-SPEEDCURVE_KEY = os.getenv("SPEEDCURVE_KEY")
-SITE_ID = os.getenv("SPEEDCURVE_SITE_ID")
+key = os.getenv("SPEEDCURVE_KEY")
+site = os.getenv("SPEEDCURVE_SITE_ID")
 
-if not SPEEDCURVE_KEY or not SITE_ID:
-    raise SystemExit("SpeedCurve credentials missing")
+if not key or not site:
+    raise SystemExit("SpeedCurve env missing")
 
-url = f"https://api.speedcurve.com/v1/sites/{SITE_ID}/runs"
+url = f"https://api.speedcurve.com/v1/sites/{site}/runs"
 
 headers = {
-    "Authorization": f"Bearer {SPEEDCURVE_KEY}",
+    "Authorization": f"Bearer {key}",
     "Content-Type": "application/json"
 }
 
-payload = {
-    "notes": "Triggered by CircleCI pipeline"
-}
-
-resp = requests.post(url, headers=headers, json=payload)
-result = {
-    "status": resp.status_code,
-    "response": resp.text
-}
+resp = requests.post(url, headers=headers, json={"notes": "CircleCI trigger"})
 
 with open("speedcurve_response.json", "w") as f:
-    json.dump(result, f, indent=2)
+    json.dump({
+        "status": resp.status_code,
+        "body": resp.text
+    }, f, indent=2)
 
-print("SpeedCurve test triggered")
+print("SpeedCurve triggered")
